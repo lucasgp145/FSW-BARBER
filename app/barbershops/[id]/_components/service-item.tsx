@@ -1,5 +1,4 @@
 "use client";
-
 import { Button } from "@/app/_components/ui/button";
 import { Calendar } from "@/app/_components/ui/calendar";
 import { Card, CardContent } from "@/app/_components/ui/card";
@@ -13,11 +12,13 @@ import {
 } from "@/app/_components/ui/sheet";
 import { Barbershop, Service } from "@prisma/client";
 import { ptBR } from "date-fns/locale";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import Image from "next/image";
 import { useMemo, useState } from "react";
 import { generateDayTimeList } from "../_helpers/hours";
-import { format } from "date-fns";
+import { format, setHours, setMinutes } from "date-fns";
+import { saveBooking } from "../_actions/save-booking";
+import { Loader2 } from "lucide-react";
 
 interface ServiceItemProps {
   barbershop: Barbershop;
@@ -30,29 +31,54 @@ const ServiceItem = ({
   barbershop,
   isAuthenticated,
 }: ServiceItemProps) => {
+  const { data } = useSession();
+
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [hour, setHour] = useState<string | undefined>();
+  const [submitIsLoading, setSubmitIsLoading] = useState(false);
 
   const handleDateClick = (date: Date | undefined) => {
     setDate(date);
     setHour(undefined);
   };
-
   const handleHourClick = (time: string) => {
     setHour(time);
   };
-
   const handleBookingClick = () => {
     if (!isAuthenticated) {
       return signIn("google");
     }
-    // TODO: abrir modal de agendamento
+  };
+
+  const handleBookingSubmit = async () => {
+    setSubmitIsLoading(true);
+
+    try {
+      if (!hour || !date || !data?.user) {
+        return;
+      }
+
+      const dateHour = Number(hour.split(":")[0]);
+      const dateMinutes = Number(hour.split(":")[1]);
+
+      const newDate = setMinutes(setHours(date, dateHour), dateMinutes);
+
+      await saveBooking({
+        serviceId: service.id,
+        barbershopId: barbershop.id,
+        date: newDate,
+        userId: (data.user as any).id,
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setSubmitIsLoading(false);
+    }
   };
 
   const timeList = useMemo(() => {
     return date ? generateDayTimeList(date) : [];
   }, [date]);
-
   return (
     <Card>
       <CardContent className="w-full p-3">
@@ -82,12 +108,10 @@ const ServiceItem = ({
                     Reservar
                   </Button>
                 </SheetTrigger>
-
                 <SheetContent className="p-0">
                   <SheetHeader className="border-b border-solid border-secondary px-5 py-6 text-left">
                     <SheetTitle>Fazer Reserva</SheetTitle>
                   </SheetHeader>
-
                   <div className="py-6">
                     <Calendar
                       mode="single"
@@ -120,7 +144,6 @@ const ServiceItem = ({
                       }}
                     />
                   </div>
-
                   {/* Mostrar lista de horários apenas se alguma data estiver selecionada */}
                   {date && (
                     <div className="flex gap-3 overflow-x-auto border-t border-solid border-secondary px-5 py-6 [&::-webkit-scrollbar]:hidden">
@@ -136,7 +159,6 @@ const ServiceItem = ({
                       ))}
                     </div>
                   )}
-
                   <div className="border-t border-solid border-secondary px-5 py-6">
                     <Card>
                       <CardContent className="flex flex-col gap-3 p-3">
@@ -150,7 +172,6 @@ const ServiceItem = ({
                             }).format(Number(service.price))}
                           </h3>
                         </div>
-
                         {date && (
                           <div className="flex justify-between">
                             <h3 className="text-sm text-gray-400">Data</h3>
@@ -161,14 +182,12 @@ const ServiceItem = ({
                             </h4>
                           </div>
                         )}
-
                         {hour && (
                           <div className="flex justify-between">
                             <h3 className="text-sm text-gray-400">Horário</h3>
                             <h4 className="text-sm">{hour}</h4>
                           </div>
                         )}
-
                         <div className="flex justify-between">
                           <h3 className="text-sm text-gray-400">Barbearia</h3>
                           <h4 className="text-sm">{barbershop.name}</h4>
@@ -178,7 +197,15 @@ const ServiceItem = ({
                   </div>
 
                   <SheetFooter className="px-5">
-                    <Button disabled={!hour || !date}>Confirmar reserva</Button>
+                    <Button
+                      onClick={handleBookingSubmit}
+                      disabled={!hour || !date || submitIsLoading}
+                    >
+                      {submitIsLoading && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      Confirmar reserva
+                    </Button>
                   </SheetFooter>
                 </SheetContent>
               </Sheet>
